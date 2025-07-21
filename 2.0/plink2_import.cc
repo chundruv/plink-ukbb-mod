@@ -918,7 +918,7 @@ uint32_t VcfCheckQuals(STD_ARRAY_KREF(uint32_t, 2) qual_field_skips, STD_ARRAY_K
   }
   ++gtext_iter;
   
-  return ((!ScanDP(gtext_iter, &ii)) && ((((ii < qual_line_mins[1]) && (!is_haploid)) || ((ii < (qual_line_mins[1] * 0.5 )) && (is_haploid))) || (ii > qual_line_maxs[1]))) {
+  return ((!ScanDP(gtext_iter, &ii)) && ((((ii < qual_line_mins[1]) && (!is_haploid)) || ((ii < (qual_line_mins[1] * 0.5 )) && (is_haploid))) || (ii > qual_line_maxs[1])));
 }
 
 // kDosageParseForceMissing = --import-dosage-certainty filter applied
