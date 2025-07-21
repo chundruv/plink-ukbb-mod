@@ -2577,6 +2577,7 @@ HEADER_INLINE BoolErr fclose_null(FILE** fptr_ptr) {
   return ii || jj;
 }
 
+BoolErr SumCommaSeparatedInts(const char* str_iter, int32_t* valp);
 
 #ifdef __LP64__
 // Reads an integer in [1, cap].
@@ -2596,8 +2597,6 @@ BoolErr ScanUintCapped(const char* str_iter, uint64_t cap, uint32_t* valp);
 // [-bound, bound]
 BoolErr ScanIntAbsBounded(const char* str_iter, uint64_t bound, int32_t* valp);
 
-BoolErr SumCommaSeparatedInts32(const char* str_iter, int32_t* valp);
-
 #else  // not __LP64__
 // Need to be more careful in 32-bit case due to overflow.
 // A funny-looking div_10/mod_10 interface is used since the cap will usually
@@ -2608,8 +2607,6 @@ BoolErr ScanPosintCapped32(const char* str_iter, uint32_t cap_div_10, uint32_t c
 BoolErr ScanUintCapped32(const char* str_iter, uint32_t cap_div_10, uint32_t cap_mod_10, uint32_t* valp);
 
 BoolErr ScanIntAbsBounded32(const char* str_iter, uint32_t bound_div_10, uint32_t bound_mod_10, int32_t* valp);
-
-BoolErr SumCommaSeparatedInts32(const char* str_iter, int32_t* valp);
 
 HEADER_INLINE BoolErr ScanPosintCapped(const char* str, uint32_t cap, uint32_t* valp) {
   return ScanPosintCapped32(str, cap / 10, cap % 10, valp);
@@ -2632,7 +2629,7 @@ HEADER_INLINE BoolErr ScanInt32(const char* str, int32_t* valp) {
 }
 
 HEADER_INLINE BoolErr ScanDP(const char* str, int32_t* valp) {
-  return SumCommaSeparatedInts32(str, valp);
+  return SumCommaSeparatedInts(str, valp);
 }
 
 // default cap = 0x7ffffffe

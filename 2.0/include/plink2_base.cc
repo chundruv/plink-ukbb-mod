@@ -91,6 +91,32 @@ BoolErr fread_checked(void* buf, uintptr_t len, FILE* infile) {
   return (cur_bytes_read != len);
 }
 
+BoolErr SumCommaSeparatedInts(const char* str, int32_t* sum_p) {
+    int32_t sum = 0;
+    const char* iter = str;
+    while (*iter) {
+        if (*iter == ':'){
+          *sum_p = sum;
+          return 0; 
+        }
+        while (isspace(*iter)) ++iter;
+        if (!isdigit(*iter)) ++iter;
+        int32_t num = 0;
+        while (isdigit(*iter)) {
+            int32_t digit = *iter - '0';
+            num = num * 10 + digit;
+            ++iter;
+        }
+        if (sum > 0x7fffffff - num) 
+            return 1; // overflow
+        sum += num;
+        while (isspace(*iter)) ++iter;
+        if (*iter == ',') ++iter;
+    }
+    *sum_p = sum;
+    return 0; 
+}
+
 #ifdef __LP64__
 static inline BoolErr ScanUintCappedFinish(const char* str_iter, uint64_t cap, uint32_t* valp) {
   uint64_t val = *valp;
@@ -116,32 +142,6 @@ static inline BoolErr ScanUintCappedFinish(const char* str_iter, uint64_t cap, u
   }
   *valp = val;
   return 0;
-}
-
-BoolErr SumCommaSeparatedInts32(const char* str, int32_t* sum_p) {
-    int32_t sum = 0;
-    const char* iter = str;
-    while (*iter) {
-        if (*iter == ':'){
-          *sum_p = sum;
-          return 0; 
-        }
-        while (isspace(*iter)) ++iter;
-        if (!isdigit(*iter)) ++iter;
-        int32_t num = 0;
-        while (isdigit(*iter)) {
-            int32_t digit = *iter - '0';
-            num = num * 10 + digit;
-            ++iter;
-        }
-        if (sum > 0x7fffffff - num) 
-            return 1; // overflow
-        sum += num;
-        while (isspace(*iter)) ++iter;
-        if (*iter == ',') ++iter;
-    }
-    *sum_p = sum;
-    return 0; 
 }
 
 BoolErr ScanPosintCapped(const char* str_iter, uint64_t cap, uint32_t* valp) {
