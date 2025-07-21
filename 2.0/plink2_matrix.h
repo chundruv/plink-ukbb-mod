@@ -1,7 +1,7 @@
 #ifndef __PLINK2_MATRIX_H__
 #define __PLINK2_MATRIX_H__
 
-// This file is part of PLINK 2.00, copyright (C) 2005-2025 Shaun Purcell,
+// This file is part of PLINK 2.0, copyright (C) 2005-2025 Shaun Purcell,
 // Christopher Chang.
 //
 // This program is free software: you can redistribute it and/or modify it
@@ -18,159 +18,160 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-// Wrappers for frequent LAPACK calls (sometimes with no-LAPACK fallbacks).
-// Now supports MKL backend.
+// Wrappers for frequent BLAS/LAPACK calls (sometimes with no-BLAS/LAPACK
+// fallbacks).
+//
+// Currently supports Accelerate, AOCL, ATLAS, MKL, and OpenBLAS backends.
+//
+// BLAS functions are referred to as cblas_<fname>(), LAPACK functions are
+// referred to as LAPACK_<fname>(), and the integer index type is lapack_int.
 
-// todo: allow this to take advantage of 64-bit integer LAPACK.  As of this
-// writing, it's available on Amazon EC2 64-bit Linux instances, but I can't
-// find it for Windows.  (And even if OS X vecLib adds it soon, we can't use it
-// there anytime soon because static linking is not an option.)
-
-#include "plink2_cmdline.h"
+#include "include/plink2_base.h"
 
 #ifdef NOLAPACK
 typedef double MatrixInvertBuf1;
 CONSTI32(kMatrixInvertBuf1ElemAlloc, 2 * sizeof(double));
 CONSTI32(kMatrixInvertBuf1CheckedAlloc, 2 * sizeof(double));
-#  define __CLPK_integer int
+#  define lapack_int int
 
 #else  // not NOLAPACK
+
+// 1. Define LAPACK_ILP64 and USE_MKL consistently.
 #  ifdef __APPLE__
-#    include <Accelerate/Accelerate.h>
-#    define USE_CBLAS_XGEMM
-#    ifdef ACCELERATE_NEW_LAPACK
-typedef int32_t __CLPK_integer;
+// Make -DLAPACK_ILP64 and -DACCELERATE_LAPACK_ILP64 have the same effect.
+#    if defined(LAPACK_ILP64) && !defined(ACCELERATE_LAPACK_ILP64)
+#      define ACCELERATE_LAPACK_ILP64
 #    endif
-#  elif defined(USE_AOCL)
-#    define USE_CBLAS_XGEMM
+#    if defined(ACCELERATE_LAPACK_ILP64) && !defined(LAPACK_ILP64)
+#      define LAPACK_ILP64
+#    endif
 #  endif
 
-#  ifndef __APPLE__
+#  if defined(LAPACK_ILP64) && !defined(__LP64__)
+#    error "Invalid compile flags."
+#  endif
 
-#    ifdef __cplusplus
+#  ifdef DYNAMIC_MKL
+#    define USE_MKL
+#  endif
+
+#  ifdef __APPLE__
+// 2a. Apple Accelerate.
+#    ifdef USE_AOCL
+#      error "plink2 cannot use AOCL on macOS."
+#    endif
+#    ifdef USE_MKL
+#      error "plink2 cannot currently use MKL on macOS."
+#    endif
+#    ifdef USE_OPENBLAS
+#      error "plink2 cannot currently use OpenBLAS on macOS."
+#    endif
+
+#    if defined(LAPACK_ILP64) && !defined(ACCELERATE_NEW_LAPACK)
+#      error "LAPACK_ILP64 requires ACCELERATE_NEW_LAPACK on macOS"
+#    endif
+#    include <Accelerate/Accelerate.h>  // IWYU pragma: export
+#    if defined(ACCELERATE_NEW_LAPACK)
+#      define USE_MTBLAS
+HEADER_INLINE void BLAS_SET_NUM_THREADS(__attribute__((unused)) int num_threads) {
+  if (__builtin_available(macOS 15.0, *)) {
+    if (num_threads > 1) {
+      BLASSetThreading(BLAS_THREADING_MULTI_THREADED);
+    } else {
+      BLASSetThreading(BLAS_THREADING_SINGLE_THREADED);
+    }
+  }
+}
+#    else
+#      define BLAS_SET_NUM_THREADS(num)
+
+#    endif
+
+#  elif defined(USE_MKL)
+// 2b. Intel MKL.
+#    if defined(USE_AOCL)
+#      error "USE_AOCL and USE_MKL cannot both be defined."
+#    endif
+#    if defined(USE_OPENBLAS)
+#      error "USE_MKL and USE_OPENBLAS cannot both be defined."
+#    endif
+#    ifdef _WIN32
+#      error "plink2 cannot currently use MKL when compiled for Windows."
+#    endif
+
+#    ifdef LAPACK_ILP64
+#      define MKL_ILP64
+#    endif
+#    ifdef DYNAMIC_MKL
+#      include <mkl_service.h>  // IWYU pragma: export
+#      include <mkl_cblas.h>  // IWYU pragma: export
+#      include <mkl_lapack.h>  // IWYU pragma: export
+#    else
+// If this isn't initially found, use the compiler's -I option to specify the
+// appropriate include-file directory.  As of this writing, it is expected to
+// be something like /opt/intel/oneapi/mkl/<version>/include .
+#      include "mkl_service.h"  // IWYU pragma: export
+#      include "mkl_cblas.h"  // IWYU pragma: export
+#      include "mkl_lapack.h"  // IWYU pragma: export
+#    endif
+#    define USE_MTBLAS
+// This technically doesn't have to be a macro, but it's surrounded by other
+// things which do have to be macros, so changing this to a namespaced function
+// arguably *decreases* overall readability...
+#    define BLAS_SET_NUM_THREADS mkl_set_num_threads
+
+#  else
+// 2c. AOCL, ATLAS, OpenBLAS.
+#    if defined(USE_AOCL) && defined(USE_OPENBLAS)
+#      error "USE_AOCL and USE_OPENBLAS cannot both be defined."
+#    endif
+#    if defined(__cplusplus) && !defined(__LP64__) && !defined(_WIN32)
+// only subcase that seems to need this; win32 requires it *not* be here
 extern "C" {
 #    endif
-  typedef double __CLPK_doublereal;
-#    ifdef __LP64__
-#      ifdef LAPACK_ILP64
-  typedef long long __CLPK_integer;
-#      else
-  typedef int32_t __CLPK_integer;
-#      endif
+#    include <cblas.h>  // IWYU pragma: export
+#    include <lapacke.h>  // IWYU pragma: export
+#    if defined(__cplusplus) && !defined(__LP64__) && !defined(_WIN32)
+}  // extern "C"
+#    endif
+#    ifdef USE_OPENBLAS
+#      define USE_MTBLAS
+#      define BLAS_SET_NUM_THREADS openblas_set_num_threads
 #    else
-#      ifdef LAPACK_ILP64
-#        error "Invalid compile flags."
-#      else
-#        ifdef _WIN32
-  // probably don't need this?
-  typedef int32_t __CLPK_integer;
-#        else
-  typedef long int __CLPK_integer;
-#        endif
-#      endif
-#    endif  // !__LP64__
-
-#    ifdef _WIN32
-  // openblas is easy enough to set up on Windows nowadays.
-  // not worth the trouble of ripping out vector extensions, etc. just so we
-  // can compile with Visual Studio and gain access to MKL
-#      ifndef USE_OPENBLAS
-#        error "Windows build currently requires OpenBLAS's LAPACK."
-#      endif
-#      define HAVE_LAPACK_CONFIG_H
-#      define LAPACK_COMPLEX_STRUCTURE
-#      include "lapacke.h"
-
-  __CLPK_doublereal ddot_(__CLPK_integer* n, __CLPK_doublereal* dx,
-                          __CLPK_integer* incx, __CLPK_doublereal* dy,
-                          __CLPK_integer* incy);
-  __CLPK_doublereal sdot_(__CLPK_integer* n, float* sx, __CLPK_integer* incx,
-                          float* sy, __CLPK_integer* incy);
-#    else  // Linux
-#      ifdef USE_MKL
-#        define USE_CBLAS_XGEMM
-#        ifdef DYNAMIC_MKL
-#          include <mkl_cblas.h>
-#          include <mkl_lapack.h>
-#        else
-#          include "mkl_cblas.h"
-#          include "mkl_lapack.h"
-#        endif
-static_assert(sizeof(MKL_INT) == 8, "Unexpected MKL_INT size.");
-#      else
-// If you want 64-bit index support, but not MKL (e.g. you're targeting an
-// AMD processor), modify the Makefile to link to a LAPACK library recompiled
-// with -fdefault-integer-8.
-
-#        ifdef USE_CBLAS_XGEMM
-#          include <cblas.h>
-// LAPACK 3.9.1 changed function signatures for functions taking char*
-// parameters; previous signatures actually corresponded to undefined behavior
-// which manifested in real problems with gfortran 7-9.
-#          ifdef LAPACK_FORTRAN_STRLEN_END
-  int dpotri_(char* uplo, __CLPK_integer* n, __CLPK_doublereal* a,
-              __CLPK_integer* lda, __CLPK_integer* info, size_t slen1);
-#          else
-  int dpotri_(char* uplo, __CLPK_integer* n, __CLPK_doublereal* a,
-              __CLPK_integer* lda, __CLPK_integer* info);
-#          endif
-#        else
-          // ARGH
-          // cmake on Ubuntu 14 seems to require use of cblas_f77.h instead of
-          // cblas.h.  Conversely, cblas_f77.h does not seem to be available on
-          // the Scientific Linux ATLAS/LAPACK install, and right now that's my
-          // only option for producing 32-bit static builds...
-          // So.  Default include is cblas.h.  To play well with cmake + Ubuntu
-          // 14 and 16 simultaneously, there is a CBLAS_F77_ON_OLD_GCC mode
-          // which picks cblas_f77.h on Ubuntu 14 and cblas.h on 16.
-#          ifdef FORCE_CBLAS_F77
-#            include <cblas_f77.h>
-#          elif !defined(CBLAS_F77_ON_OLD_GCC)
-#            include <cblas.h>
-#          else
-#            if (__GNUC__ == 4)
-#              include <cblas_f77.h>
-#            else
-#              if __has_include(<cblas.h>)
-#                include <cblas.h>
-#              else
-#                include <cblas_f77.h>
-#              endif
-#            endif
-#          endif
-  __CLPK_doublereal ddot_(__CLPK_integer* n, __CLPK_doublereal* dx,
-                          __CLPK_integer* incx, __CLPK_doublereal* dy,
-                          __CLPK_integer* incy);
-
-  __CLPK_doublereal sdot_(__CLPK_integer* n, float* sx, __CLPK_integer* incx,
-                          float* sy, __CLPK_integer* incy);
-  int dpotri_(char* uplo, __CLPK_integer* n, __CLPK_doublereal* a,
-              __CLPK_integer* lda, __CLPK_integer* info);
-#        endif
-#      endif  // !USE_MKL
-#      ifdef USE_CUDA
-#        include "cuda/plink2_matrix_cuda.h"
-#      endif
+#      define BLAS_SET_NUM_THREADS(num)
 #    endif
-
-  void xerbla_(void);
-#    ifdef __cplusplus
-} // extern "C"
-#    endif
-
-#  endif  // !__APPLE__
-
-#  ifdef LAPACK_FORTRAN_STRLEN_END
-#    define dpotri_wrap(a, b, c, d, e) dpotri_((a), (b), (c), (d), (e), 1)
-#  else
-#    define dpotri_wrap(a, b, c, d, e) dpotri_((a), (b), (c), (d), (e))
 #  endif
 
-typedef __CLPK_integer MatrixInvertBuf1;
+// This will probably be moved the next time CUDA work is done.
+#  ifdef USE_CUDA
+#    include "cuda/plink2_matrix_cuda.h"
+#  endif
+
+// 3. Make lapack_int and LAPACK_<fname>() work everywhere.
+#  ifndef lapack_int
+#    ifdef LAPACK_ILP64
+#      ifdef __APPLE__
+// argh
+#        define lapack_int long
+#      elif defined(USE_MKL)
+#        define lapack_int long long
+#      else
+#        define lapack_int int64_t
+#      endif
+#    else
+#      define lapack_int int32_t
+#    endif
+#  endif
+
+#  if defined(__APPLE__) || defined(USE_MKL)
+#    define LAPACK_dpotri dpotri_
+#  endif
+
+typedef lapack_int MatrixInvertBuf1;
 // need to be careful about >= 2^32?
-CONSTI32(kMatrixInvertBuf1ElemAlloc, sizeof(__CLPK_integer));
+CONSTI32(kMatrixInvertBuf1ElemAlloc, sizeof(lapack_int));
 // invert_matrix_checked() usually requires a larger buffer
-CONSTI32(kMatrixInvertBuf1CheckedAlloc, 2 * sizeof(__CLPK_integer));
+CONSTI32(kMatrixInvertBuf1CheckedAlloc, 2 * sizeof(lapack_int));
 
 #endif  // !NOLAPACK
 
