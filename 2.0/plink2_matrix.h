@@ -27,6 +27,7 @@
 // referred to as LAPACK_<fname>(), and the integer index type is lapack_int.
 
 #include "include/plink2_base.h"
+#include <math.h>
 
 #ifdef NOLAPACK
 typedef double MatrixInvertBuf1;

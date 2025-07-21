@@ -4679,7 +4679,9 @@ PglErr CalcGrm(const uintptr_t* orig_sample_include, const SampleIdInfo* siip, c
       variant_idx_start = variant_idx;
       parity = 1 - parity;
     }
+#ifdef LAPACK
     BLAS_SET_NUM_THREADS(1);
+#endif
     if (pct > 10) {
       putc_unlocked('\b', stdout);
     }
@@ -5077,7 +5079,9 @@ PglErr CalcGrm(const uintptr_t* orig_sample_include, const SampleIdInfo* siip, c
   CswriteCloseCond(&css, cswritep);
   fclose_cond(outfile);
   CleanupThreads(&tg);
+#ifdef LAPACK
   BLAS_SET_NUM_THREADS(1);
+#endif
   BigstackDoubleReset(bigstack_mark, bigstack_end_mark);
   return reterr;
 }
@@ -8610,7 +8614,9 @@ PglErr ScoreReport(const uintptr_t* sample_include, const SampleIdInfo* siip, co
   fclose_cond(score_tmpfile);
   CswriteCloseCond(&css, cswritep);
   CleanupThreads(&tg);
+#ifdef LAPACK
   BLAS_SET_NUM_THREADS(1);
+#endif
   CleanupTextStream2("--score[-list] file", &score_txs, &reterr);
   BigstackDoubleReset(bigstack_mark, bigstack_end_mark);
   return reterr;

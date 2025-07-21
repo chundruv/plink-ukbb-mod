@@ -12497,7 +12497,9 @@ int main(int argc, char** argv) {
         pc.dependency_flags |= kfFilterNoSplitChr;
       }
 
+#ifdef LAPACK
       BLAS_SET_NUM_THREADS(1);
+#endif
       reterr = Plink2Core(&pc, make_plink2_flags, pgenname, psamname, pvarname, outname, outname_end, king_cutoff_fprefix, &chr_info, &main_sfmt);
     }
   }
