@@ -118,6 +118,32 @@ static inline BoolErr ScanUintCappedFinish(const char* str_iter, uint64_t cap, u
   return 0;
 }
 
+BoolErr SumCommaSeparatedInts32(const char* str, int32_t* sum_p) {
+    int32_t sum = 0;
+    const char* iter = str;
+    while (*iter) {
+        if (*iter == ':'){
+          *sum_p = sum;
+          return 0; 
+        }
+        while (isspace(*iter)) ++iter;
+        if (!isdigit(*iter)) ++iter;
+        int32_t num = 0;
+        while (isdigit(*iter)) {
+            int32_t digit = *iter - '0';
+            num = num * 10 + digit;
+            ++iter;
+        }
+        if (sum > 0x7fffffff - num) 
+            return 1; // overflow
+        sum += num;
+        while (isspace(*iter)) ++iter;
+        if (*iter == ',') ++iter;
+    }
+    *sum_p = sum;
+    return 0; 
+}
+
 BoolErr ScanPosintCapped(const char* str_iter, uint64_t cap, uint32_t* valp) {
   // '0' has ascii code 48
   assert(ctou32(str_iter[0]) > 32);
@@ -673,12 +699,10 @@ uintptr_t FirstUnequal4(const void* arr1, const void* arr2, uintptr_t nbytes) {
     const uintptr_t final_offset = nbytes - kBytesPerVec;
     const char* s1 = S_CAST(const char*, arr1);
     const char* s2 = S_CAST(const char*, arr2);
-    // bugfix (5 Jul 2025): this must be VecUc on ARM, not VecW
-    // (disturbing that arm_shrn4_uc() call compiled at all...)
-    const VecUc v1 = vecuc_loadu(&(s1[final_offset]));
-    const VecUc v2 = vecuc_loadu(&(s2[final_offset]));
+    const VecW v1 = vecw_loadu(&(s1[final_offset]));
+    const VecW v2 = vecw_loadu(&(s2[final_offset]));
 #  ifndef SIMDE_ARM_NEON_A32V8_NATIVE
-    const uint32_t eq_result = vecuc_movemask(v1 == v2);
+    const uint32_t eq_result = vecw_movemask(v1 == v2);
     if (eq_result != kVec8thUintMax) {
       return final_offset + ctzu32(~eq_result);
     }

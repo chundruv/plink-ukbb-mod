@@ -22,6 +22,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <iostream>
 
 #include "include/pgenlib_misc.h"
 #include "include/pgenlib_write.h"
@@ -825,7 +826,7 @@ uint32_t VcfQualScanInit1(const char* format_start, const char* format_end, int3
     qual_exists = (qual_field_idxs[0] != UINT32_MAX);
   }
   if ((vcf_min_dp >= 0) || (vcf_max_dp != 0x7fffffff)) {
-    qual_field_idxs[1] = GetVcfFormatPosition("DP", format_start, format_end, 2);
+    qual_field_idxs[1] = GetVcfFormatPosition("LAD", format_start, format_end, 3);
     if (qual_field_idxs[1] != UINT32_MAX) {
       qual_exists = 1;
     }
@@ -895,7 +896,7 @@ typedef struct VcfImportContext {
 
 // returns 1 if a quality check failed
 // assumes either 1 or 2 qual fields, otherwise change this to a loop
-uint32_t VcfCheckQuals(STD_ARRAY_KREF(uint32_t, 2) qual_field_skips, STD_ARRAY_KREF(int32_t, 2) qual_line_mins, STD_ARRAY_KREF(int32_t, 2) qual_line_maxs, const char* gtext_iter, const char* gtext_end, uint32_t qual_field_ct) {
+uint32_t VcfCheckQuals(STD_ARRAY_KREF(uint32_t, 2) qual_field_skips, STD_ARRAY_KREF(int32_t, 2) qual_line_mins, STD_ARRAY_KREF(int32_t, 2) qual_line_maxs, const char* gtext_iter, const char* gtext_end, uint32_t qual_field_ct, uint32_t is_haploid) {
   const uint32_t skip0 = qual_field_skips[0];  // this can now be zero
   if (skip0) {
     gtext_iter = AdvToNthDelimChecked(gtext_iter, gtext_end, skip0, ':');
@@ -916,7 +917,8 @@ uint32_t VcfCheckQuals(STD_ARRAY_KREF(uint32_t, 2) qual_field_skips, STD_ARRAY_K
     return 0;
   }
   ++gtext_iter;
-  return (!ScanInt32(gtext_iter, &ii)) && ((ii < qual_line_mins[1]) || (ii > qual_line_maxs[1]));
+  
+  return ((!ScanDP(gtext_iter, &ii)) && ((((ii < qual_line_mins[1]) && (!is_haploid)) || ((ii < (qual_line_mins[1] * 0.5 )) && (is_haploid))) || (ii > qual_line_maxs[1]))) {
 }
 
 // kDosageParseForceMissing = --import-dosage-certainty filter applied
@@ -1164,13 +1166,17 @@ VcfParseErr VcfScanBiallelicHdsLine(const VcfImportContext* vicp, const char* fo
       return kVcfParseMissingTokens;
     }
     dosagescan_iter = cur_gtext_end;
-    if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, cur_gtext_start, cur_gtext_end, qual_field_ct)) {
-      continue;
-    }
     if (gt_exists) {
       cur_gt_phased = (cur_gtext_start[1] == '|');
       is_haploid = (cur_gtext_start[1] != '/') && (!cur_gt_phased);
     }
+    if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, cur_gtext_start, cur_gtext_end, qual_field_ct, is_haploid)) {
+      continue;
+    }
+//    if (gt_exists) {
+//      cur_gt_phased = (cur_gtext_start[1] == '|');
+//      is_haploid = (cur_gtext_start[1] != '/') && (!cur_gt_phased);
+//    }
     DosageParseResult dpr = kDosageParseOk;
     int32_t cur_dphase_delta = 0;
     uint32_t hds_valid = 0;
@@ -1265,14 +1271,18 @@ VcfParseErr VcfConvertPhasedBiallelicDosageLine(const VcfImportContext* vicp, co
         return kVcfParseMissingTokens;
       }
       uintptr_t cur_geno = 3;
-      if (!(qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct))) {
+      if (gt_exists) {
+        cur_gt_phased = (linebuf_iter[1] == '|');
+        is_haploid = (linebuf_iter[1] != '/') && (!cur_gt_phased);
+      }
+      if (!(qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct, is_haploid))) {
         // We now parse dosage first.  Only care about the hardcall if
         // (i) there's no dosage, or
         // (ii) there's no phased dosage, and it's a phased het.
-        if (gt_exists) {
-          cur_gt_phased = (linebuf_iter[1] == '|');
-          is_haploid = (linebuf_iter[1] != '/') && (!cur_gt_phased);
-        }
+        //if (gt_exists) {
+        //  cur_gt_phased = (linebuf_iter[1] == '|');
+        //  is_haploid = (linebuf_iter[1] != '/') && (!cur_gt_phased);
+        //}
         const uint32_t shifted_bit = 1U << sample_idx_lowbits;
         DosageParseResult dpr = kDosageParseOk;
         int32_t cur_dphase_delta = 0;
@@ -1452,7 +1462,7 @@ uintptr_t VcfScanShortallelicLine(const VcfImportBaseContext* vibcp, const char*
       break;
     }
     if (VcfIsHetShort(&(phasescan_iter[-1]), halfcall_mode)) {
-      if ((!qual_field_ct) || (!VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, phasescan_iter, FirstPrespace(&(phasescan_iter[2])), qual_field_ct))) {
+      if ((!qual_field_ct) || (!VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, phasescan_iter, FirstPrespace(&(phasescan_iter[2])), qual_field_ct, 0))) {
         goto VcfScanShortallelicLine_phased_het_found;
       }
     }
@@ -1464,7 +1474,7 @@ uintptr_t VcfScanShortallelicLine(const VcfImportBaseContext* vibcp, const char*
     if ((phasescan_iter[2] != '|') || (!VcfIsHetShort(&(phasescan_iter[1]), halfcall_mode))) {
       continue;
     }
-    if ((!qual_field_ct) || (!VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, phasescan_iter, FirstPrespace(&(phasescan_iter[4])), qual_field_ct))) {
+    if ((!qual_field_ct) || (!VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, phasescan_iter, FirstPrespace(&(phasescan_iter[4])), qual_field_ct, 0))) {
       goto VcfScanShortallelicLine_phased_het_found;
     }
   }
@@ -1502,14 +1512,15 @@ VcfParseErr VcfConvertUnphasedBiallelicLine(const VcfImportBaseContext* vibcp, c
         return kVcfParseMissingTokens;
       }
       uintptr_t cur_geno;
-      if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct)) {
+      const uint32_t is_haploid = (linebuf_iter[1] != '/') && (linebuf_iter[1] != '|');
+      if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct, is_haploid)) {
         // skipping polyploid check for now
         cur_geno = 3;
       } else {
         // Still must check for '|', since phasing_flags bit is unset when all
         // entries are e.g. 0|0.  We just don't bother distinguishing it from
         // '/'.
-        const uint32_t is_haploid = (linebuf_iter[1] != '/') && (linebuf_iter[1] != '|');
+      //  const uint32_t is_haploid = (linebuf_iter[1] != '/') && (linebuf_iter[1] != '|');
         cur_geno = ctow(*linebuf_iter) - 48;
         if (cur_geno <= 1) {
           if (is_haploid) {
@@ -1615,11 +1626,12 @@ VcfParseErr VcfConvertUnphasedMultiallelicLine(const VcfImportBaseContext* vibcp
           return kVcfParseMissingTokens;
         }
         uintptr_t cur_geno;
-        if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct)) {
+        const uint32_t is_haploid = (linebuf_iter[1] != '/') && (linebuf_iter[1] != '|');
+        if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct, is_haploid)) {
           // skipping polyploid check for now
           cur_geno = 3;
         } else {
-          const uint32_t is_haploid = (linebuf_iter[1] != '/') && (linebuf_iter[1] != '|');
+         // const uint32_t is_haploid = (linebuf_iter[1] != '/') && (linebuf_iter[1] != '|');
           cur_geno = ctow(*linebuf_iter) - 48;
           if (cur_geno < allele_ct) {
             if (is_haploid) {
@@ -1763,7 +1775,7 @@ VcfParseErr VcfConvertUnphasedMultiallelicLine(const VcfImportBaseContext* vibcp
           return kVcfParseMissingTokens;
         }
         uintptr_t cur_geno;
-        if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct)) {
+        if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct, 0)) {
           // skipping polyploid check for now
           cur_geno = 3;
         } else {
@@ -1992,12 +2004,14 @@ VcfParseErr VcfConvertPhasedBiallelicLine(const VcfImportBaseContext* vibcp, con
         return kVcfParseMissingTokens;
       }
       uintptr_t cur_geno;
-      if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct)) {
+      const uint32_t is_phased = (linebuf_iter[1] == '|');
+      const uint32_t is_haploid = (!is_phased) && (linebuf_iter[1] != '/');
+      if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct, is_haploid)) {
         // skipping polyploid check for now
         cur_geno = 3;
       } else {
-        const uint32_t is_phased = (linebuf_iter[1] == '|');
-        const uint32_t is_haploid = (!is_phased) && (linebuf_iter[1] != '/');
+//        const uint32_t is_phased = (linebuf_iter[1] == '|');
+//        const uint32_t is_haploid = (!is_phased) && (linebuf_iter[1] != '/');
         cur_geno = ctow(*linebuf_iter) - 48;
         if (cur_geno <= 1) {
           if (is_haploid) {
@@ -2136,12 +2150,14 @@ VcfParseErr VcfConvertPhasedMultiallelicLine(const VcfImportBaseContext* vibcp, 
           return kVcfParseMissingTokens;
         }
         uintptr_t cur_geno;
-        if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct)) {
+        const uint32_t is_phased = (linebuf_iter[1] == '|');
+        const uint32_t is_haploid = (!is_phased) && (linebuf_iter[1] != '/');
+        if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct, is_haploid)) {
           // skipping polyploid check for now
           cur_geno = 3;
         } else {
-          const uint32_t is_phased = (linebuf_iter[1] == '|');
-          const uint32_t is_haploid = (!is_phased) && (linebuf_iter[1] != '/');
+//          const uint32_t is_phased = (linebuf_iter[1] == '|');
+//          const uint32_t is_haploid = (!is_phased) && (linebuf_iter[1] != '/');
           cur_geno = ctow(*linebuf_iter) - 48;
           if (cur_geno < allele_ct) {
             if (is_haploid) {
@@ -2302,7 +2318,7 @@ VcfParseErr VcfConvertPhasedMultiallelicLine(const VcfImportBaseContext* vibcp, 
           return kVcfParseMissingTokens;
         }
         uintptr_t cur_geno;
-        if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct)) {
+        if (qual_field_ct && VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, linebuf_iter, cur_gtext_end, qual_field_ct, 0)) {
           // skipping polyploid check for now
           cur_geno = 3;
         } else {
@@ -2549,7 +2565,7 @@ uintptr_t VcfScanLongallelicLine(const VcfImportBaseContext* vibcp, const char* 
       break;
     }
     if (VcfIsHetLong(&(phasescan_iter[1]), &(next_vbar[1]), halfcall_mode)) {
-      if ((!qual_field_ct) || (!VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, phasescan_iter, FirstPrespace(&(next_vbar[2])), qual_field_ct))) {
+      if ((!qual_field_ct) || (!VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, phasescan_iter, FirstPrespace(&(next_vbar[2])), qual_field_ct, 0))) {
         goto VcfScanLongallelicLine_phased_het_found;
       }
     }
@@ -2565,7 +2581,7 @@ uintptr_t VcfScanLongallelicLine(const VcfImportBaseContext* vibcp, const char* 
     if ((*next_vbar != '|') || (!VcfIsHetLong(&(phasescan_iter[1]), &(next_vbar[1]), halfcall_mode))) {
       continue;
     }
-    if ((!qual_field_ct) || (!VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, phasescan_iter, FirstPrespace(&(next_vbar[2])), qual_field_ct))) {
+    if ((!qual_field_ct) || (!VcfCheckQuals(qual_field_skips, qual_line_mins, qual_line_maxs, phasescan_iter, FirstPrespace(&(next_vbar[2])), qual_field_ct, 0))) {
       goto VcfScanLongallelicLine_phased_het_found;
     }
   }
@@ -2973,13 +2989,13 @@ PglErr VcfToPgen(const char* vcfname, const char* preexisting_psamname, const ch
             goto VcfToPgen_ret_MALFORMED_INPUT_WW;
           }
           format_gq_relevant = 1;
-        } else if (((vcf_min_dp != -1) || (vcf_max_dp != 0x7fffffff)) && strequal_k(idval, "DP", id_slen)) {
+        } else if (((vcf_min_dp != -1) || (vcf_max_dp != 0x7fffffff)) && strequal_k(idval, "LAD", id_slen)) {
           if (unlikely(format_dp_relevant)) {
-            logerrputs("Error: Duplicate FORMAT/DP header line in --vcf file.\n");
+            logerrputs("Error: Duplicate FORMAT/LAD header line in --vcf file.\n");
             goto VcfToPgen_ret_MALFORMED_INPUT;
           }
           if (unlikely(!strequal_k(numstr, "1", num_slen))) {
-            snprintf(g_logbuf, kLogbufSize, "Error: Header line %" PRIuPTR " of --vcf file does not have expected FORMAT/DP format.\n", line_idx);
+            snprintf(g_logbuf, kLogbufSize, "Error: Header line %" PRIuPTR " of --vcf file does not have expected FORMAT/LAD format.\n", line_idx);
           }
           format_dp_relevant = 1;
         } else if (dosage_import_field) {
@@ -3047,7 +3063,7 @@ PglErr VcfToPgen(const char* vcfname, const char* preexisting_psamname, const ch
       vcf_min_gq = -1;
     }
     if ((!format_dp_relevant) && ((vcf_max_dp != 0x7fffffff) || (vcf_min_dp != -1))) {
-      logerrputs("Warning: No FORMAT/DP key found in --vcf file header.  --vcf-{max,min}-dp\nignored.\n(If this header line is actually present, but with extra spaces or unusual\nfield ordering, standardize the header with e.g. bcftools.)\n");
+      logerrputs("Warning: No FORMAT/LAD key found in --vcf file header.  --vcf-{max,min}-dp\nignored.\n(If this header line is actually present, but with extra spaces or unusual\nfield ordering, standardize the header with e.g. bcftools.)\n");
       vcf_max_dp = 0x7fffffff;
       vcf_min_dp = -1;
     }
@@ -7853,13 +7869,13 @@ PglErr BcfToPgen(const char* bcfname, const char* preexisting_psamname, const ch
             goto BcfToPgen_ret_MALFORMED_INPUT_WW;
           }
           gq_sidx = cur_header_idx;
-        } else if (((vcf_min_dp != -1) || (vcf_max_dp != 0x7fffffff)) && strequal_k(id_ptr, "DP", id_slen)) {
+        } else if (((vcf_min_dp != -1) || (vcf_max_dp != 0x7fffffff)) && strequal_k(id_ptr, "LAD", id_slen)) {
           if (unlikely(dp_sidx)) {
-            logerrputs("Error: Duplicate FORMAT/DP header line in BCF text header block.\n");
+            logerrputs("Error: Duplicate FORMAT/LAD header line in BCF text header block.\n");
             goto BcfToPgen_ret_MALFORMED_INPUT;
           }
           if (unlikely(!strequal_k(numstr, "1", num_slen))) {
-            snprintf(g_logbuf, kLogbufSize, "Error: Line %u of BCF text header block does not have expected FORMAT/DP format.\n", header_line_idx);
+            snprintf(g_logbuf, kLogbufSize, "Error: Line %u of BCF text header block does not have expected FORMAT/LAD format.\n", header_line_idx);
             goto BcfToPgen_ret_MALFORMED_INPUT_WW;
           }
           dp_sidx = cur_header_idx;
