@@ -20,7 +20,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <unistd.h>  // unlink()
-
+#include <iostream>
 #include "plink2_bits.h"
 
 #ifdef __cplusplus
@@ -2106,6 +2106,8 @@ BoolErr AppendHphase(const uintptr_t* __restrict genoarr_hets, const uintptr_t* 
       const uint32_t cur_byte_ct = DivUp(phaseinfo_write_idx_lowbits, CHAR_BIT);
       SubwordStoreMov(phaseinfo_write_word, cur_byte_ct, &fwrite_bufp_iter);
     }
+    std::cerr << "fwrite_bufp_iter - pwcp->fwrite_bufp = " << (fwrite_bufp_iter - pwcp->fwrite_bufp) << std::endl;
+    std::cerr << "het_ctp1_8 = " << het_ctp1_8 << ", DivUp(phasepresent_ct,8) = " << DivUp(phasepresent_ct,8) << std::endl;
     assert(S_CAST(uintptr_t, fwrite_bufp_iter - pwcp->fwrite_bufp) == het_ctp1_8 + DivUp(phasepresent_ct, 8));
   }
   pwcp->fwrite_bufp = fwrite_bufp_iter;
@@ -2124,9 +2126,9 @@ void PwcAppendBiallelicGenovecHphase(const uintptr_t* __restrict genovec, const 
   pwcp->vidx += 1;
   unsigned char* vrec_len_dest = &(pwcp->vrec_len_buf[vidx * vrec_len_byte_ct]);
   const uint32_t phasepresent_ct = phasepresent? PopcountWords(phasepresent, sample_ctl) : het_ct;
-  if (phasepresent_ct) {
-    AppendHphase(genovec, phasepresent, phaseinfo, het_ct, phasepresent_ct, pwcp, vrtype_dest, &vrec_len);
-  }
+  //if (phasepresent_ct) {
+  //  AppendHphase(genovec, phasepresent, phaseinfo, het_ct, phasepresent_ct, pwcp, vrtype_dest, &vrec_len);
+  //}
   SubU32Store(vrec_len, vrec_len_byte_ct, vrec_len_dest);
 }
 
@@ -2144,11 +2146,11 @@ BoolErr PwcAppendMultiallelicGenovecHphase(const uintptr_t* __restrict genovec, 
   const uint32_t phasepresent_ct = phasepresent? PopcountWords(phasepresent, sample_ctl) : het_ct;
   unsigned char* vrtype_dest = &(DowncastToUc(pwcp->vrtype_buf)[vidx]);
   *vrtype_dest = vrtype;
-  if (phasepresent_ct) {
-    if (unlikely(AppendHphase(genovec_hets, phasepresent, phaseinfo, het_ct, phasepresent_ct, pwcp, vrtype_dest, &vrec_len))) {
-      return 1;
-    }
-  }
+//  if (phasepresent_ct) {
+//    if (unlikely(AppendHphase(genovec_hets, phasepresent, phaseinfo, het_ct, phasepresent_ct, pwcp, vrtype_dest, &vrec_len))) {
+//      return 1;
+//    }
+//  }
   pwcp->vidx += 1;
   const uintptr_t vrec_len_byte_ct = pwcp->vrec_len_byte_ct;
   SubU32Store(vrec_len, vrec_len_byte_ct, &(pwcp->vrec_len_buf[vidx * vrec_len_byte_ct]));
@@ -2227,9 +2229,9 @@ BoolErr PwcAppendBiallelicGenovecHphaseDosage16(const uintptr_t* __restrict geno
   pwcp->vidx += 1;
   unsigned char* vrec_len_dest = &(pwcp->vrec_len_buf[vidx * vrec_len_byte_ct]);
   const uint32_t phasepresent_ct = phasepresent? PopcountWords(phasepresent, sample_ctl) : het_ct;
-  if (phasepresent_ct) {
-    AppendHphase(genovec, phasepresent, phaseinfo, het_ct, phasepresent_ct, pwcp, vrtype_dest, &vrec_len);
-  }
+//  if (phasepresent_ct) {
+//    AppendHphase(genovec, phasepresent, phaseinfo, het_ct, phasepresent_ct, pwcp, vrtype_dest, &vrec_len);
+//  }
   if (dosage_ct) {
     if (unlikely(AppendDosage16(dosage_present, dosage_main, dosage_ct, 0, pwcp, vrtype_dest, &vrec_len))) {
       return 1;
@@ -2273,9 +2275,9 @@ BoolErr PwcAppendBiallelicGenovecDphase16(const uintptr_t* __restrict genovec, c
   pwcp->vidx += 1;
   unsigned char* vrec_len_dest = &(pwcp->vrec_len_buf[vidx * vrec_len_byte_ct]);
   const uint32_t phasepresent_ct = phasepresent? PopcountWords(phasepresent, sample_ctl) : het_ct;
-  if (phasepresent_ct) {
-    AppendHphase(genovec, phasepresent, phaseinfo, het_ct, phasepresent_ct, pwcp, vrtype_dest, &vrec_len);
-  }
+  //if (phasepresent_ct) {
+  //  AppendHphase(genovec, phasepresent, phaseinfo, het_ct, phasepresent_ct, pwcp, vrtype_dest, &vrec_len);
+  //}
   if (dosage_ct) {
     if (unlikely(AppendDosage16(dosage_present, dosage_main, dosage_ct, dphase_ct, pwcp, vrtype_dest, &vrec_len))) {
       return 1;
