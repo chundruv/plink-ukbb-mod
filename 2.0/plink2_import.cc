@@ -857,14 +857,14 @@ uint32_t VcfQualScanInit2(STD_ARRAY_KREF(uint32_t, 3) qual_field_idxs, STD_ARRAY
     qual_line_mins[qual_field_ct] = qual_mins[0];
     qual_line_maxs[qual_field_ct] = 0x7fffffff;
     ++qual_field_ct;
-    if (ft_field_idx != UINT32_MAX) {
-      qual_field_skips[qual_field_ct] = ft_field_idx;
-      ++qual_field_ct;
-    }
     if (dp_field_idx != UINT32_MAX) {
       qual_field_skips[qual_field_ct] = dp_field_idx;
-      qual_line_mins[qual_field_ct-1] = qual_mins[1];
-      qual_line_maxs[qual_field_ct-1] = qual_maxs[1];
+      qual_line_mins[qual_field_ct] = qual_mins[1];
+      qual_line_maxs[qual_field_ct] = qual_maxs[1];
+      ++qual_field_ct;
+    }
+    if (ft_field_idx != UINT32_MAX) {
+      qual_field_skips[qual_field_ct] = ft_field_idx;
       ++qual_field_ct;
     }
   }
@@ -923,28 +923,25 @@ uint32_t VcfCheckQuals(STD_ARRAY_KREF(uint32_t, 3) qual_field_skips, STD_ARRAY_K
   if (qual_field_ct == 1) {
     return 0;
   }
+  
   gtext_iter = AdvToNthDelimChecked(gtext_iter, gtext_end, qual_field_skips[1], ':');
   if (!gtext_iter) {
     return 0;
   }
-  ++gtext_iter;
-  if (gtext_iter[0] != 'P' && gtext_iter[0] != '.') {
-    return 1;
+  ++gtext_iter; 
+  if ((!ScanDP(gtext_iter, &ii)) && ((ii < qual_line_mins[1]) || (ii > qual_line_maxs[1]))){
+	  return 1;
   }
   if (qual_field_ct == 2) {
     return 0;
   }
-  
+
   gtext_iter = AdvToNthDelimChecked(gtext_iter, gtext_end, qual_field_skips[2], ':');
   if (!gtext_iter) {
     return 0;
   }
-  
   ++gtext_iter;
-  if (gtext_iter[0] != '.'){
-	return 0;
-  }
-  return ((!ScanDP(gtext_iter, &ii)) && ((((ii < qual_line_mins[1]) && (!is_haploid)) || ((ii < (qual_line_mins[1] * 0.5 )) && (is_haploid))) || (ii > qual_line_maxs[1])));
+  return (gtext_iter[0] != 'P' && gtext_iter[0] != '.');
 }
 
 // kDosageParseForceMissing = --import-dosage-certainty filter applied
