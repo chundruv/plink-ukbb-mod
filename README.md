@@ -1,3 +1,10 @@
+## Plink2 mods for UKBB QC vcf -> pgen
+
+Modifications made: 
+* DP calculated from LAD
+* DP requirement halved for haploid males on chrX
+
+
 What this updates: https://zzz.bwh.harvard.edu/plink/
 
 Main methods paper: https://academic.oup.com/gigascience/article/4/1/s13742-015-0047-8/2707533
