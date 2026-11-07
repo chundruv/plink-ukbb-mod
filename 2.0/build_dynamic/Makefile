@@ -19,10 +19,10 @@
 #     FORCE_32BIT (warning: you may need to add a zconf.h symlink to make that
 #     work)
 #   Debug symbols: change DEBUG to -g (still incompatible with -flto?)
-NO_AVX2 = 1
-NO_SSE42 = 1
+NO_AVX2 ?=
+NO_SSE42 ?= 1
 CPU_CHECK = 1
-NO_LAPACK =
+NO_LAPACK ?= 1
 ZSTD_O2 = 1
 STATIC_ZLIB =
 STATIC_ZSTD ?= 1
